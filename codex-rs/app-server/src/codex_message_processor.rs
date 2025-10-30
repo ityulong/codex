@@ -1787,6 +1787,7 @@ async fn derive_config_from_params(
         tools_web_search_request: None,
         experimental_sandbox_command_assessment: None,
         additional_writable_roots: Vec::new(),
+        subagent_toggles: HashMap::new(),
     };
 
     let cli_overrides = cli_overrides

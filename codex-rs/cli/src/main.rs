@@ -25,8 +25,10 @@ use std::path::PathBuf;
 use supports_color::Stream;
 
 mod mcp_cmd;
+mod subagents_cmd;
 
 use crate::mcp_cmd::McpCli;
+use crate::subagents_cmd::SubagentsCli;
 use codex_core::config::Config;
 use codex_core::config::ConfigOverrides;
 use codex_core::features::is_known_feature_key;
@@ -101,6 +103,8 @@ enum Subcommand {
     /// [EXPERIMENTAL] Browse tasks from Codex Cloud and apply changes locally.
     #[clap(name = "cloud", alias = "cloud-tasks")]
     Cloud(CloudTasksCli),
+    /// Manage configured subagents.
+    Subagents(SubagentsCli),
 
     /// Internal: run the responses API proxy.
     #[clap(hide = true)]
@@ -448,6 +452,14 @@ async fn cli_main(codex_linux_sandbox_exe: Option<PathBuf>) -> anyhow::Result<()
                 root_config_overrides.clone(),
             );
             codex_cloud_tasks::run_main(cloud_cli, codex_linux_sandbox_exe).await?;
+        }
+        Some(Subcommand::Subagents(subagents_cli)) => {
+            subagents_cli
+                .run(
+                    root_config_overrides.clone(),
+                    codex_linux_sandbox_exe.clone(),
+                )
+                .await?;
         }
         Some(Subcommand::Sandbox(sandbox_args)) => match sandbox_args.cmd {
             SandboxCommand::Macos(mut seatbelt_cli) => {
