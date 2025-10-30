@@ -46,6 +46,7 @@ use codex_rmcp_client::OAuthCredentialsStoreMode;
 use dirs::home_dir;
 use dunce::canonicalize;
 use serde::Deserialize;
+use serde::Serialize;
 use similar::DiffableStr;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
@@ -198,6 +199,9 @@ pub struct Config {
     /// Optional URI-based file opener. If set, citations to files in the model
     /// output will be hyperlinked using the specified URI scheme.
     pub file_opener: UriBasedFileOpener,
+
+    /// Declarative subagent definitions available to orchestration surfaces.
+    pub subagents: BTreeMap<String, SubagentDefinition>,
 
     /// Path to the `codex-linux-sandbox` executable. This must be set if
     /// [`crate::exec::SandboxType::LinuxSeccomp`] is used. Note that this
@@ -927,6 +931,10 @@ pub struct ConfigToml {
     /// Collection of settings that are specific to the TUI.
     pub tui: Option<Tui>,
 
+    /// Named subagent definitions available for orchestration.
+    #[serde(default)]
+    pub subagents: Option<HashMap<String, SubagentToml>>,
+
     /// When set to `true`, `AgentReasoning` events will be hidden from the
     /// UI/output. Defaults to `false`.
     pub hide_agent_reasoning: Option<bool>,
@@ -1040,6 +1048,32 @@ impl From<ToolsToml> for Tools {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize)]
+pub struct SubagentDefinition {
+    pub display_name: Option<String>,
+    pub description: Option<String>,
+    pub system_prompt: Option<String>,
+    pub enabled: bool,
+    pub allowed_tools: Vec<String>,
+    pub context_sources: Vec<String>,
+    pub triggers: Vec<String>,
+}
+
+#[derive(Deserialize, Debug, Clone, Default, PartialEq, Eq)]
+pub struct SubagentToml {
+    pub display_name: Option<String>,
+    pub description: Option<String>,
+    pub system_prompt: Option<String>,
+    #[serde(default)]
+    pub enabled: Option<bool>,
+    #[serde(default)]
+    pub tools: Vec<String>,
+    #[serde(default)]
+    pub context: Vec<String>,
+    #[serde(default)]
+    pub triggers: Vec<String>,
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub struct SandboxPolicyResolution {
     pub policy: SandboxPolicy,
@@ -1141,6 +1175,25 @@ impl ConfigToml {
             None => Ok(ConfigProfile::default()),
         }
     }
+
+    fn resolve_subagents(&self) -> BTreeMap<String, SubagentDefinition> {
+        let mut subagents = BTreeMap::new();
+        for (name, toml) in self.subagents.clone().unwrap_or_default() {
+            subagents.insert(
+                name,
+                SubagentDefinition {
+                    display_name: toml.display_name,
+                    description: toml.description,
+                    system_prompt: toml.system_prompt,
+                    enabled: toml.enabled.unwrap_or(true),
+                    allowed_tools: toml.tools,
+                    context_sources: toml.context,
+                    triggers: toml.triggers,
+                },
+            );
+        }
+        subagents
+    }
 }
 
 /// Optional overrides for user configuration (e.g., from CLI flags).
@@ -1162,6 +1215,8 @@ pub struct ConfigOverrides {
     pub experimental_sandbox_command_assessment: Option<bool>,
     /// Additional directories that should be treated as writable roots for this session.
     pub additional_writable_roots: Vec<PathBuf>,
+    /// Override enabled state for named subagents.
+    pub subagent_toggles: HashMap<String, bool>,
 }
 
 impl Config {
@@ -1191,6 +1246,7 @@ impl Config {
             tools_web_search_request: override_tools_web_search_request,
             experimental_sandbox_command_assessment: sandbox_command_assessment_override,
             additional_writable_roots,
+            subagent_toggles,
         } = overrides;
 
         let active_profile_name = config_profile_key
@@ -1219,6 +1275,13 @@ impl Config {
         };
 
         let features = Features::from_config(&cfg, &config_profile, feature_overrides);
+
+        let mut subagents = cfg.resolve_subagents();
+        for (name, enabled) in subagent_toggles {
+            if let Some(definition) = subagents.get_mut(&name) {
+                definition.enabled = enabled;
+            }
+        }
 
         let resolved_cwd = {
             use std::env;
@@ -1420,6 +1483,7 @@ impl Config {
             codex_home,
             history,
             file_opener: cfg.file_opener.unwrap_or(UriBasedFileOpener::VsCode),
+            subagents,
             codex_linux_sandbox_exe,
 
             hide_agent_reasoning: cfg.hide_agent_reasoning.unwrap_or(false),
@@ -3092,6 +3156,7 @@ model_verbosity = "high"
                 codex_home: fixture.codex_home(),
                 history: History::default(),
                 file_opener: UriBasedFileOpener::VsCode,
+                subagents: BTreeMap::new(),
                 codex_linux_sandbox_exe: None,
                 hide_agent_reasoning: false,
                 show_raw_agent_reasoning: false,
@@ -3163,6 +3228,7 @@ model_verbosity = "high"
             codex_home: fixture.codex_home(),
             history: History::default(),
             file_opener: UriBasedFileOpener::VsCode,
+            subagents: BTreeMap::new(),
             codex_linux_sandbox_exe: None,
             hide_agent_reasoning: false,
             show_raw_agent_reasoning: false,
@@ -3249,6 +3315,7 @@ model_verbosity = "high"
             codex_home: fixture.codex_home(),
             history: History::default(),
             file_opener: UriBasedFileOpener::VsCode,
+            subagents: BTreeMap::new(),
             codex_linux_sandbox_exe: None,
             hide_agent_reasoning: false,
             show_raw_agent_reasoning: false,
@@ -3321,6 +3388,7 @@ model_verbosity = "high"
             codex_home: fixture.codex_home(),
             history: History::default(),
             file_opener: UriBasedFileOpener::VsCode,
+            subagents: BTreeMap::new(),
             codex_linux_sandbox_exe: None,
             hide_agent_reasoning: false,
             show_raw_agent_reasoning: false,

@@ -991,6 +991,7 @@ dependencies = [
  "supports-color",
  "tempfile",
  "tokio",
+ "toml",
 ]
 
 [[package]]
